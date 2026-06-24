@@ -195,6 +195,74 @@ impl Catalog {
         Ok(())
     }
 
+    fn master_develop_id(&self, photo_id: i64) -> Result<i64, CatalogError> {
+        Ok(self.conn.query_row(
+            "SELECT id FROM develop WHERE photo_id=?1 AND is_master=1",
+            params![photo_id],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// The seq of the version a photo's master develop currently points at.
+    fn head_seq(&self, develop_id: i64) -> Result<i64, CatalogError> {
+        Ok(self.conn.query_row(
+            "SELECT rv.seq FROM develop_head h
+             JOIN recipe_version rv ON rv.id = h.version_id
+             WHERE h.develop_id = ?1",
+            params![develop_id],
+            |r| r.get(0),
+        )?)
+    }
+
+    fn move_head(&self, develop_id: i64, dir: i64) -> Result<bool, CatalogError> {
+        let cur = self.head_seq(develop_id)?;
+        let (cmp, order) = if dir < 0 { ("<", "DESC") } else { (">", "ASC") };
+        let sql = format!(
+            "SELECT id FROM recipe_version WHERE develop_id=?1 AND seq {cmp} ?2 ORDER BY seq {order} LIMIT 1"
+        );
+        let target: Option<i64> =
+            self.conn.query_row(&sql, params![develop_id, cur], |r| r.get(0)).optional()?;
+        if let Some(version_id) = target {
+            self.conn.execute(
+                "UPDATE develop_head SET version_id=?2 WHERE develop_id=?1",
+                params![develop_id, version_id],
+            )?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Move the master develop's HEAD one step back in history. Returns whether
+    /// it moved (false if already at the oldest state).
+    pub fn undo(&self, photo_id: i64) -> Result<bool, CatalogError> {
+        let d = self.master_develop_id(photo_id)?;
+        self.move_head(d, -1)
+    }
+
+    /// Move the master develop's HEAD one step forward. Returns whether it moved.
+    pub fn redo(&self, photo_id: i64) -> Result<bool, CatalogError> {
+        let d = self.master_develop_id(photo_id)?;
+        self.move_head(d, 1)
+    }
+
+    /// The master develop's history as (seq, label, is_head), oldest first.
+    pub fn history(&self, photo_id: i64) -> Result<Vec<(i64, String, bool)>, CatalogError> {
+        let d = self.master_develop_id(photo_id)?;
+        let head = self.head_seq(d)?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT seq, label FROM recipe_version WHERE develop_id=?1 ORDER BY seq")?;
+        let rows = stmt
+            .query_map(params![d], |r| {
+                let seq: i64 = r.get(0)?;
+                let label: String = r.get(1)?;
+                Ok((seq, label, seq == head))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     /// Save (or replace by name) a develop preset.
     pub fn save_preset(&self, name: &str, recipe: &recipe::Recipe) -> Result<(), CatalogError> {
         self.conn.execute("DELETE FROM preset WHERE name=?1", params![name])?;

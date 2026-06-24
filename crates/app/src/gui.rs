@@ -386,6 +386,29 @@ impl Gui {
         }
     }
 
+    /// Navigate the saved develop history of the current photo.
+    fn nav_history(&mut self, redo: bool) {
+        if self.dev_id < 0 {
+            self.status = "History needs a cataloged photo.".into();
+            return;
+        }
+        let moved = match &self.catalog {
+            Some(cat) => {
+                if redo { cat.redo(self.dev_id) } else { cat.undo(self.dev_id) }.unwrap_or(false)
+            }
+            None => false,
+        };
+        if moved {
+            if let Some(cat) = &self.catalog {
+                self.recipe = cat.master_recipe(self.dev_id).unwrap_or_default();
+            }
+            self.preview_dirty = true;
+            self.status = if redo { "Redo".into() } else { "Undo".into() };
+        } else {
+            self.status = if redo { "Nothing to redo.".into() } else { "Nothing to undo.".into() };
+        }
+    }
+
     fn refresh_presets(&mut self) {
         if let Some(cat) = &self.catalog {
             self.presets = cat.list_presets().unwrap_or_default();
@@ -716,6 +739,21 @@ impl Gui {
                             self.export_dialog();
                         }
                     });
+                    if !self.single_file {
+                        ui.horizontal(|ui| {
+                            if ui.button("↩  Undo").clicked() {
+                                self.nav_history(false);
+                            }
+                            if ui.button("↪  Redo").clicked() {
+                                self.nav_history(true);
+                            }
+                        });
+                        ui.label(
+                            egui::RichText::new("Undo/redo step through saved versions")
+                                .small()
+                                .weak(),
+                        );
+                    }
 
                     if changed {
                         self.preview_dirty = true;

@@ -43,6 +43,65 @@ fn rating_flag_label_round_trip() {
     assert_eq!(row.color_label, 5);
 }
 
+/// Seed a photo plus a master develop with an initial seq-0 'Import' version.
+fn seed_developed_photo(db: &std::path::Path) -> i64 {
+    let conn = Connection::open(db).unwrap();
+    conn.execute("INSERT INTO folder (path) VALUES ('/tmp/p')", []).unwrap();
+    let folder = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO photo (folder_id, filename, width, height) VALUES (?1,'h.arw',100,100)",
+        params![folder],
+    )
+    .unwrap();
+    let photo = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO develop (photo_id, name, is_master) VALUES (?1,'Master',1)",
+        params![photo],
+    )
+    .unwrap();
+    let develop = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO recipe_version (develop_id, seq, label, recipe) VALUES (?1,0,'Import','{}')",
+        params![develop],
+    )
+    .unwrap();
+    let version = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO develop_head (develop_id, version_id) VALUES (?1,?2)",
+        params![develop, version],
+    )
+    .unwrap();
+    photo
+}
+
+#[test]
+fn history_undo_redo() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("cat.db");
+    let mut cat = catalog::Catalog::open(&db).unwrap();
+    let id = seed_developed_photo(&db);
+
+    let mut r1 = recipe::Recipe::default();
+    r1.globals.tone.exposure_ev = 1.0;
+    cat.save_master_recipe(id, &r1, "Exposure").unwrap();
+    let mut r2 = recipe::Recipe::default();
+    r2.globals.tone.exposure_ev = 2.0;
+    cat.save_master_recipe(id, &r2, "More exposure").unwrap();
+
+    // Three states: Import(0), Exposure(1, =1.0), More exposure(2, =2.0).
+    assert_eq!(cat.history(id).unwrap().len(), 3);
+    assert_eq!(cat.master_recipe(id).unwrap().globals.tone.exposure_ev, 2.0);
+
+    assert!(cat.undo(id).unwrap());
+    assert_eq!(cat.master_recipe(id).unwrap().globals.tone.exposure_ev, 1.0);
+    assert!(cat.undo(id).unwrap());
+    assert_eq!(cat.master_recipe(id).unwrap().globals.tone.exposure_ev, 0.0); // Import
+    assert!(!cat.undo(id).unwrap()); // already oldest
+
+    assert!(cat.redo(id).unwrap());
+    assert_eq!(cat.master_recipe(id).unwrap().globals.tone.exposure_ev, 1.0);
+}
+
 #[test]
 fn presets_round_trip() {
     let dir = tempfile::tempdir().unwrap();
