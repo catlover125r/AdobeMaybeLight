@@ -1,0 +1,14 @@
+[package]
+name = "gpu"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+wgpu = "22"
+bytemuck = { version = "1", features = ["derive"] }
+half = { version = "2", features = ["bytemuck"] }
+pollster = "0.3"
+image = { version = "0.25", default-features = false, features = ["png", "tiff"] }
+raw-decode = { path = "../raw-decode" }
+recipe = { path = "../recipe" }

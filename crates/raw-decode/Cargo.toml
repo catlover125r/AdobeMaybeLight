@@ -1,0 +1,11 @@
+[package]
+name = "raw-decode"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+thiserror = "1"
+
+[build-dependencies]
+cc = "1"

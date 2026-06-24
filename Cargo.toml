@@ -1,0 +1,24 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/raw-decode",
+    "crates/recipe",
+    "crates/catalog",
+    "crates/gpu",
+    "crates/app",
+    "crates/ai-smoke",
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+rust-version = "1.80"
+
+# Optimize native deps even in dev so RAW decode / GPU upload aren't molasses.
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
