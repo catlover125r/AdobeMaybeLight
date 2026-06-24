@@ -30,6 +30,8 @@ pub struct DevelopParams {
     pub vignette: [f32; 4], // amount, midpoint, feather, _
     pub grain: [f32; 4],    // amount, size, _, _
     pub curve: [f32; 4],    // parametric tone curve: shadows, darks, lights, highlights
+    pub crop: [f32; 4],     // normalized left, top, width, height
+    pub geom: [f32; 4],     // angle_rad, src_aspect (filled at render), crop_active, _
 }
 
 impl Default for DevelopParams {
@@ -53,6 +55,8 @@ impl Default for DevelopParams {
             vignette: [0.0; 4],
             grain: [0.0; 4],
             curve: [0.0; 4],
+            crop: [0.0, 0.0, 1.0, 1.0],
+            geom: [0.0; 4],
         }
     }
 }
@@ -97,8 +101,32 @@ impl From<&recipe::Recipe> for DevelopParams {
                 let c = &g.tone_curve;
                 [c.shadows, c.darks, c.lights, c.highlights]
             },
+            crop: {
+                let c = &g.crop;
+                [c.left, c.top, c.width, c.height]
+            },
+            geom: [g.crop.angle_deg.to_radians(), 0.0, 0.0, 0.0],
         }
     }
+}
+
+/// The output pixel dimensions after applying `params`' crop to a source of
+/// `sw`x`sh`. Straighten doesn't change the crop's pixel size.
+pub fn crop_output_dims(params: &DevelopParams, sw: u32, sh: u32) -> (u32, u32) {
+    let cw = params.crop[2].clamp(0.01, 1.0);
+    let ch = params.crop[3].clamp(0.01, 1.0);
+    (((sw as f32 * cw).round() as u32).max(1), ((sh as f32 * ch).round() as u32).max(1))
+}
+
+/// Fill the render-time geometry fields (source aspect; whether crop/straighten
+/// is active) so the shader can short-circuit to an exact passthrough when the
+/// frame is uncropped and unrotated.
+fn finalize(mut p: DevelopParams, sw: u32, sh: u32) -> DevelopParams {
+    let full = p.crop[0] == 0.0 && p.crop[1] == 0.0 && p.crop[2] >= 1.0 && p.crop[3] >= 1.0;
+    let active = !full || p.geom[0] != 0.0;
+    p.geom[1] = sw as f32 / sh.max(1) as f32;
+    p.geom[2] = if active { 1.0 } else { 0.0 };
+    p
 }
 
 pub struct GpuContext {
@@ -345,7 +373,7 @@ pub fn render_to_target(
     params: DevelopParams,
     target: &PreviewTarget,
 ) {
-    scene.set_params(&ctx.queue, params);
+    scene.set_params(&ctx.queue, finalize(params, scene.width, scene.height));
     let mut enc = ctx.device.create_command_encoder(&Default::default());
     {
         let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -376,8 +404,9 @@ pub fn render_rgba8(
     scene: &Scene,
     params: DevelopParams,
 ) -> Result<(u32, u32, Vec<u8>), Box<dyn std::error::Error>> {
-    scene.set_params(&ctx.queue, params);
-    let (w, h) = (scene.width, scene.height);
+    scene.set_params(&ctx.queue, finalize(params, scene.width, scene.height));
+    // Output dimensions follow the crop, not the source.
+    let (w, h) = crop_output_dims(&params, scene.width, scene.height);
 
     let target = ctx.device.create_texture(&wgpu::TextureDescriptor {
         label: Some("export-target"),

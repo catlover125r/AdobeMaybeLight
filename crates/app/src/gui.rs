@@ -166,6 +166,7 @@ struct Gui {
     dev_path: Option<PathBuf>,
     dev_loading: bool,
     dev_scene: Option<Scene>,
+    dev_src: (u32, u32),
     dev_target: Option<PreviewTarget>,
     dev_tex_id: Option<egui::TextureId>,
     recipe: Recipe,
@@ -228,19 +229,14 @@ impl Gui {
                             wgpu::TextureFormat::Rgba8Unorm,
                         ));
                     }
-                    let (pw, ph) = preview_dims(w, h, PREVIEW_CAP);
+                    // The preview target is (re)built by ensure_preview, sized to
+                    // the current crop. Drop any previous one here.
                     if let Some(old) = self.dev_tex_id.take() {
                         self.egui_renderer.free_texture(&old);
                     }
-                    let target = PreviewTarget::new(&self.ctx, pw, ph);
-                    let tex_id = self.egui_renderer.register_native_texture(
-                        &self.ctx.device,
-                        &target.sample_view,
-                        wgpu::FilterMode::Linear,
-                    );
+                    self.dev_target = None;
                     self.dev_scene = Some(scene);
-                    self.dev_target = Some(target);
-                    self.dev_tex_id = Some(tex_id);
+                    self.dev_src = (w, h);
                     self.dev_loading = false;
                     self.preview_dirty = true;
                     self.status.clear();
@@ -260,21 +256,39 @@ impl Gui {
     }
 
     fn ensure_preview(&mut self) {
-        let ready = self.preview_dirty
-            && self.dev_scene.is_some()
-            && self.dev_target.is_some()
-            && self.preview_pipeline.is_some();
-        if !ready {
+        if self.dev_scene.is_none() || self.preview_pipeline.is_none() {
             return;
         }
         let params = self.params();
-        {
-            let scene = self.dev_scene.as_ref().unwrap();
-            let target = self.dev_target.as_ref().unwrap();
-            let pipeline = self.preview_pipeline.as_ref().unwrap();
-            gpu::render_to_target(&self.ctx, pipeline, scene, params, target);
+
+        // Size the preview target to the cropped output (capped), rebuilding
+        // and re-registering the egui texture only when those dims change.
+        let (cw, ch) = gpu::crop_output_dims(&params, self.dev_src.0, self.dev_src.1);
+        let (pw, ph) = preview_dims(cw, ch, PREVIEW_CAP);
+        if self.dev_target.as_ref().map(|t| (t.width, t.height)) != Some((pw, ph)) {
+            if let Some(old) = self.dev_tex_id.take() {
+                self.egui_renderer.free_texture(&old);
+            }
+            let target = PreviewTarget::new(&self.ctx, pw, ph);
+            let id = self.egui_renderer.register_native_texture(
+                &self.ctx.device,
+                &target.sample_view,
+                wgpu::FilterMode::Linear,
+            );
+            self.dev_target = Some(target);
+            self.dev_tex_id = Some(id);
+            self.preview_dirty = true;
         }
-        self.preview_dirty = false;
+
+        if self.preview_dirty {
+            {
+                let scene = self.dev_scene.as_ref().unwrap();
+                let target = self.dev_target.as_ref().unwrap();
+                let pipeline = self.preview_pipeline.as_ref().unwrap();
+                gpu::render_to_target(&self.ctx, pipeline, scene, params, target);
+            }
+            self.preview_dirty = false;
+        }
     }
 
     fn do_import(&mut self) {
@@ -558,6 +572,29 @@ impl Gui {
                     changed |= slider(ui, &mut g.presence.saturation, "Saturation");
 
                     ui.add_space(8.0);
+                    egui::CollapsingHeader::new("Crop & Straighten").show(ui, |ui| {
+                        let c = &mut g.crop;
+                        changed |= ui
+                            .add(egui::Slider::new(&mut c.angle_deg, -45.0..=45.0).text("Straighten°"))
+                            .changed();
+                        changed |= ui.add(egui::Slider::new(&mut c.left, 0.0..=0.9).text("Left")).changed();
+                        changed |= ui.add(egui::Slider::new(&mut c.top, 0.0..=0.9).text("Top")).changed();
+                        changed |= ui
+                            .add(egui::Slider::new(&mut c.width, 0.1..=1.0).text("Width"))
+                            .changed();
+                        changed |= ui
+                            .add(egui::Slider::new(&mut c.height, 0.1..=1.0).text("Height"))
+                            .changed();
+                        // Keep the rect inside the frame.
+                        c.width = c.width.min(1.0 - c.left);
+                        c.height = c.height.min(1.0 - c.top);
+                        if ui.button("Reset crop").clicked() {
+                            *c = recipe::Crop::default();
+                            changed = true;
+                        }
+                    });
+
+                    ui.add_space(8.0);
                     egui::CollapsingHeader::new("Tone Curve").show(ui, |ui| {
                         changed |= slider(ui, &mut g.tone_curve.highlights, "Highlights");
                         changed |= slider(ui, &mut g.tone_curve.lights, "Lights");
@@ -812,6 +849,7 @@ impl ApplicationHandler for App {
             dev_path: None,
             dev_loading: false,
             dev_scene: None,
+            dev_src: (1, 1),
             dev_target: None,
             dev_tex_id: None,
             recipe: Recipe::default(),

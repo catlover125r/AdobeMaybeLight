@@ -31,6 +31,8 @@ struct Develop {
     vignette: vec4<f32>, // amount[-100,100], midpoint[0,100], feather[0,100], _
     grain: vec4<f32>,    // amount[0,100], size[0,100], _, _
     curve: vec4<f32>,    // parametric tone curve regions: shadows,darks,lights,highlights [-100,100]
+    crop: vec4<f32>,     // normalized left, top, width, height
+    geom: vec4<f32>,     // angle_rad, src_aspect, crop_active, _
 };
 
 const LUMA: vec3<f32> = vec3<f32>(0.2126, 0.7152, 0.0722);
@@ -159,9 +161,27 @@ fn hash21(p: vec2<f32>) -> f32 {
     return fract((p3.x + p3.y) * p3.z);
 }
 
+// Map an output-space uv (0..1 over the crop rect) to a source-texture uv,
+// applying straighten rotation isotropically about the crop center.
+fn src_uv(o: vec2<f32>) -> vec2<f32> {
+    let cw = dev.crop.z;
+    let ch = dev.crop.w;
+    let center = vec2<f32>(dev.crop.x + cw * 0.5, dev.crop.y + ch * 0.5);
+    var c = (o - vec2<f32>(0.5)) * vec2<f32>(cw, ch);
+    let a = dev.geom.y; // source aspect (W/H)
+    let theta = dev.geom.x;
+    let ci = vec2<f32>(c.x * a, c.y); // isotropic space
+    let ct = cos(theta);
+    let st = sin(theta);
+    let ri = vec2<f32>(ci.x * ct - ci.y * st, ci.x * st + ci.y * ct);
+    return center + vec2<f32>(ri.x / a, ri.y);
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    var rgb = textureSample(img_tex, img_smp, in.uv).rgb;
+    // Crop / straighten (guarded: exact passthrough when inactive).
+    let suv = select(in.uv, src_uv(in.uv), dev.geom.z > 0.5);
+    var rgb = textureSample(img_tex, img_smp, suv).rgb;
 
     // 1. White balance + exposure, in linear light.
     rgb *= vec3<f32>(dev.wb_r, dev.wb_g, dev.wb_b);

@@ -38,6 +38,25 @@ pub struct Globals {
     pub hsl: Hsl,
     pub effects: Effects,
     pub tone_curve: ToneCurve,
+    pub crop: Crop,
+}
+
+/// Crop rectangle (normalized to the source frame) + straighten angle. Default
+/// is the full frame, unrotated.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Crop {
+    pub left: f32,
+    pub top: f32,
+    pub width: f32,
+    pub height: f32,
+    pub angle_deg: f32,
+}
+
+impl Default for Crop {
+    fn default() -> Self {
+        Self { left: 0.0, top: 0.0, width: 1.0, height: 1.0, angle_deg: 0.0 }
+    }
 }
 
 /// Parametric tone curve (the four region sliders). All [-100,100], 0 = identity.

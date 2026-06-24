@@ -96,6 +96,41 @@ fn main() {
     assert!(bright_drop + 10 < bright_base, "curve highlights- must lower brights ({bright_base}->{bright_drop})");
     println!("tone curve OK: dark {dark_base}->{dark_lift}, bright {bright_base}->{bright_drop}");
 
+    // --- Crop: output dimensions follow the crop rectangle. ---
+    let (cw, ch) = gpu::crop_output_dims(&DevelopParams::default(), w, h);
+    assert_eq!((cw, ch), (w, h), "full-frame crop must keep source dims");
+    let mut half = DevelopParams::default();
+    half.crop = [0.25, 0.25, 0.5, 0.5];
+    let (cw2, ch2) = gpu::crop_output_dims(&half, w, h);
+    assert_eq!((cw2, ch2), (32, 32), "half crop of 64px must be 32px");
+
+    // Straighten: on a diagonal-split scene, rotating the cropped view must
+    // change the pixels. (finalize() preserves geom[0]=angle; it only fills the
+    // aspect/active fields.)
+    let mut diag = vec![0u16; (w * h * 3) as usize];
+    for y in 0..h {
+        for x in 0..w {
+            let i = ((y * w + x) * 3) as usize;
+            let val: u16 = if x > y { 60000 } else { 1000 };
+            diag[i] = val;
+            diag[i + 1] = val;
+            diag[i + 2] = val;
+        }
+    }
+    let mut inset = DevelopParams::default();
+    inset.crop = [0.2, 0.2, 0.6, 0.6];
+    let straight_px = render(&ctx, w, h, &diag, inset);
+    let mut angled = inset;
+    angled.geom[0] = 0.4; // ~23°
+    let rotated_px = render(&ctx, w, h, &diag, angled);
+    let diff: u32 = straight_px
+        .iter()
+        .zip(rotated_px.iter())
+        .map(|(a, b)| (*a as i32 - *b as i32).unsigned_abs())
+        .sum();
+    assert!(diff > 1000, "straighten must change the cropped pixels (diff {diff})");
+    println!("crop OK: full {cw}x{ch}, half {cw2}x{ch2}; straighten pixel diff {diff}");
+
     // --- Export formats: JPEG + TIFF round-trip to the right dimensions. ---
     let scene = Scene::from_linear_rgb16(&ctx, w, h, &gray);
     for (name, q) in [("aml-export.jpg", 90u8), ("aml-export.tif", 0u8)] {
