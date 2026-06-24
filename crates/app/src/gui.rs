@@ -456,8 +456,44 @@ impl Gui {
 
                     ui.add_space(8.0);
                     ui.strong("Presence");
+                    changed |= slider(ui, &mut g.presence.dehaze, "Dehaze");
                     changed |= slider(ui, &mut g.presence.vibrance, "Vibrance");
                     changed |= slider(ui, &mut g.presence.saturation, "Saturation");
+
+                    ui.add_space(8.0);
+                    egui::CollapsingHeader::new("Color Mixer (HSL)").show(ui, |ui| {
+                        ui.label(egui::RichText::new("Hue").weak());
+                        changed |= band_sliders(ui, &mut g.hsl.hue);
+                        ui.label(egui::RichText::new("Saturation").weak());
+                        changed |= band_sliders(ui, &mut g.hsl.saturation);
+                        ui.label(egui::RichText::new("Luminance").weak());
+                        changed |= band_sliders(ui, &mut g.hsl.luminance);
+                    });
+
+                    ui.add_space(8.0);
+                    egui::CollapsingHeader::new("Effects").show(ui, |ui| {
+                        ui.label(egui::RichText::new("Post-crop vignette").weak());
+                        changed |= slider(ui, &mut g.effects.vignette_amount, "Amount");
+                        changed |= ui
+                            .add(
+                                egui::Slider::new(&mut g.effects.vignette_midpoint, 0.0..=100.0)
+                                    .text("Midpoint"),
+                            )
+                            .changed();
+                        changed |= ui
+                            .add(
+                                egui::Slider::new(&mut g.effects.vignette_feather, 0.0..=100.0)
+                                    .text("Feather"),
+                            )
+                            .changed();
+                        ui.label(egui::RichText::new("Grain").weak());
+                        changed |= ui
+                            .add(egui::Slider::new(&mut g.effects.grain_amount, 0.0..=100.0).text("Amount"))
+                            .changed();
+                        changed |= ui
+                            .add(egui::Slider::new(&mut g.effects.grain_size, 0.0..=100.0).text("Size"))
+                            .changed();
+                    });
 
                     ui.add_space(12.0);
                     ui.separator();
@@ -564,6 +600,18 @@ impl Gui {
 /// A 0-centered [-100, 100] develop slider; returns whether it changed.
 fn slider(ui: &mut egui::Ui, v: &mut f32, label: &str) -> bool {
     ui.add(egui::Slider::new(v, -100.0..=100.0).text(label)).changed()
+}
+
+const HSL_BANDS: [&str; 8] =
+    ["Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple", "Magenta"];
+
+/// Eight per-band [-100, 100] sliders; returns whether any changed.
+fn band_sliders(ui: &mut egui::Ui, bands: &mut [f32; 8]) -> bool {
+    let mut changed = false;
+    for (i, name) in HSL_BANDS.iter().enumerate() {
+        changed |= ui.add(egui::Slider::new(&mut bands[i], -100.0..=100.0).text(*name)).changed();
+    }
+    changed
 }
 
 impl ApplicationHandler for App {

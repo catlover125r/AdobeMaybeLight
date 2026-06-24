@@ -35,6 +35,36 @@ pub struct Globals {
     pub white_balance: WhiteBalance,
     pub tone: Tone,
     pub presence: Presence,
+    pub hsl: Hsl,
+    pub effects: Effects,
+}
+
+/// Per-band HSL/color mixer. 8 bands, in order:
+/// Red, Orange, Yellow, Green, Aqua, Blue, Purple, Magenta. All [-100,100],
+/// 0 = identity.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Hsl {
+    pub hue: [f32; 8],
+    pub saturation: [f32; 8],
+    pub luminance: [f32; 8],
+}
+
+impl Default for Hsl {
+    fn default() -> Self {
+        Self { hue: [0.0; 8], saturation: [0.0; 8], luminance: [0.0; 8] }
+    }
+}
+
+/// Post-crop vignette + grain. All identity-default (0).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Effects {
+    pub vignette_amount: f32,   // -100 darken .. +100 lighten corners
+    pub vignette_midpoint: f32, // 0..100 radius where falloff starts
+    pub vignette_feather: f32,  // 0..100 falloff width
+    pub grain_amount: f32,      // 0..100
+    pub grain_size: f32,        // 0..100
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

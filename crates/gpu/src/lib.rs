@@ -5,8 +5,9 @@
 use half::f16;
 use wgpu::util::DeviceExt;
 
-/// GPU uniform for the global develop pass. Plain f32 scalars laid out to
-/// match the WGSL `Develop` struct exactly (48 bytes, 16-aligned).
+/// GPU uniform for the global develop pass. Plain scalars + vec4-packed arrays
+/// laid out to match the WGSL `Develop` struct exactly (176 bytes; every block
+/// starts on a 16-byte boundary so std140 and `#[repr(C)]` agree).
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct DevelopParams {
@@ -21,7 +22,13 @@ pub struct DevelopParams {
     pub wb_r: f32,
     pub wb_g: f32,
     pub wb_b: f32,
-    pub _pad: f32,
+    pub dehaze: f32,
+    // 8-band HSL, two vec4s per channel (R,O,Y,G,Aqua,B,Purple,Magenta).
+    pub hsl_hue: [[f32; 4]; 2],
+    pub hsl_sat: [[f32; 4]; 2],
+    pub hsl_lum: [[f32; 4]; 2],
+    pub vignette: [f32; 4], // amount, midpoint, feather, _
+    pub grain: [f32; 4],    // amount, size, _, _
 }
 
 impl Default for DevelopParams {
@@ -38,9 +45,19 @@ impl Default for DevelopParams {
             wb_r: 1.0,
             wb_g: 1.0,
             wb_b: 1.0,
-            _pad: 0.0,
+            dehaze: 0.0,
+            hsl_hue: [[0.0; 4]; 2],
+            hsl_sat: [[0.0; 4]; 2],
+            hsl_lum: [[0.0; 4]; 2],
+            vignette: [0.0; 4],
+            grain: [0.0; 4],
         }
     }
+}
+
+/// Pack an 8-element band array into the two-vec4 layout the shader expects.
+fn pack8(v: &[f32; 8]) -> [[f32; 4]; 2] {
+    [[v[0], v[1], v[2], v[3]], [v[4], v[5], v[6], v[7]]]
 }
 
 impl From<&recipe::Recipe> for DevelopParams {
@@ -55,6 +72,7 @@ impl From<&recipe::Recipe> for DevelopParams {
             wb_b = (1.0 - 0.4 * t).max(0.05);
             wb_g = (1.0 - 0.2 * g.white_balance.tint / 100.0).max(0.05);
         }
+        let e = &g.effects;
         Self {
             exposure: g.tone.exposure_ev,
             contrast: g.tone.contrast,
@@ -67,7 +85,12 @@ impl From<&recipe::Recipe> for DevelopParams {
             wb_r,
             wb_g,
             wb_b,
-            _pad: 0.0,
+            dehaze: g.presence.dehaze,
+            hsl_hue: pack8(&g.hsl.hue),
+            hsl_sat: pack8(&g.hsl.saturation),
+            hsl_lum: pack8(&g.hsl.luminance),
+            vignette: [e.vignette_amount, e.vignette_midpoint, e.vignette_feather, 0.0],
+            grain: [e.grain_amount, e.grain_size, 0.0, 0.0],
         }
     }
 }

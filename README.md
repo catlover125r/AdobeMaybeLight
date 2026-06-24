@@ -13,8 +13,9 @@ desktop GUI — proven end-to-end on Apple Silicon (Metal + CoreML):
 - `crates/catalog` — SQLite catalog: import folders of RAWs (with EXIF),
   read/write recipes, idempotent.
 - `crates/gpu` — wgpu develop pipeline (WB, exposure, contrast,
-  highlights/shadows/whites/blacks, vibrance/saturation), shared by the live
-  preview and headless export. Preview == export.
+  highlights/shadows/whites/blacks, vibrance/saturation, dehaze, 8-band HSL,
+  post-crop vignette, grain), shared by the live preview and headless export.
+  Preview == export. `cargo run -p gpu --example modtest` checks the modules.
 - `crates/app` — **egui desktop app**: a Library grid (background-decoded
   thumbnails) and a Develop view with live sliders driving the GPU pipeline,
   plus the `import` / `--recipe` / `--export` / `--selftest` headless CLI.
@@ -29,6 +30,8 @@ desktop GUI — proven end-to-end on Apple Silicon (Metal + CoreML):
 | LibRaw decode (real files) | ✅ Sony ARW 6024×4024, Canon CR2, Adobe DNG → correct color + orientation |
 | Catalog import + EXIF | ✅ real metadata (camera/ISO/aperture), idempotent re-import |
 | Recipe → develop → export | ✅ saturation −100 ⇒ exact grayscale; contrast/exposure verified |
+| Develop globals: WB/exposure/tone/vibrance/sat | ✅ live sliders, linear pipeline |
+| Develop globals: 8-band HSL, dehaze, vignette, grain | ✅ `gpu --example modtest` (band desat, corner darken, grain variation) |
 | wgpu upload → WGSL → readback → PNG | ✅ `--selftest`, math verified (lin 0.25→sRGB 137) |
 | Preview == export (one shader) | ✅ shared `make_pipeline` |
 | Desktop GUI (Library + Develop) | ✅ egui/wgpu: thumbnail grid, live sliders, save/export |
