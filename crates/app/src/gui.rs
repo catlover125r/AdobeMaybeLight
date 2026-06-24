@@ -159,6 +159,7 @@ struct Gui {
     mode: Mode,
     single_file: bool,
     status: String,
+    selected: Option<i64>,
 
     // develop state
     dev_id: i64,
@@ -301,6 +302,73 @@ impl Gui {
         }
     }
 
+    fn set_rating(&mut self, id: i64, r: i64) {
+        if let Some(c) = &self.catalog {
+            let _ = c.set_rating(id, r);
+        }
+        if let Some(p) = self.photos.iter_mut().find(|p| p.id == id) {
+            p.rating = r.clamp(0, 5);
+        }
+    }
+
+    fn set_flag(&mut self, id: i64, f: i64) {
+        if let Some(c) = &self.catalog {
+            let _ = c.set_flag(id, f);
+        }
+        if let Some(p) = self.photos.iter_mut().find(|p| p.id == id) {
+            p.flag = f.clamp(-1, 1);
+        }
+    }
+
+    fn set_label(&mut self, id: i64, l: i64) {
+        if let Some(c) = &self.catalog {
+            let _ = c.set_color_label(id, l);
+        }
+        if let Some(p) = self.photos.iter_mut().find(|p| p.id == id) {
+            p.color_label = l.clamp(0, 5);
+        }
+    }
+
+    /// Apply library keyboard shortcuts (0–5 rating, P/X/U flag, 6–9 color) to
+    /// the selected photo.
+    fn handle_library_keys(&mut self, ctx: &egui::Context) {
+        let Some(id) = self.selected else { return };
+        use egui::Key::*;
+        let mut rating: Option<i64> = None;
+        let mut flag: Option<i64> = None;
+        let mut label: Option<i64> = None;
+        ctx.input(|i| {
+            for (k, v) in [(Num0, 0), (Num1, 1), (Num2, 2), (Num3, 3), (Num4, 4), (Num5, 5)] {
+                if i.key_pressed(k) {
+                    rating = Some(v);
+                }
+            }
+            if i.key_pressed(P) {
+                flag = Some(1);
+            }
+            if i.key_pressed(X) {
+                flag = Some(-1);
+            }
+            if i.key_pressed(U) {
+                flag = Some(0);
+            }
+            for (k, v) in [(Num6, 1), (Num7, 2), (Num8, 3), (Num9, 4)] {
+                if i.key_pressed(k) {
+                    label = Some(v);
+                }
+            }
+        });
+        if let Some(r) = rating {
+            self.set_rating(id, r);
+        }
+        if let Some(f) = flag {
+            self.set_flag(id, f);
+        }
+        if let Some(l) = label {
+            self.set_label(id, l);
+        }
+    }
+
     fn save_recipe(&mut self) {
         if self.dev_id >= 0 {
             if let Some(cat) = &mut self.catalog {
@@ -357,6 +425,18 @@ impl Gui {
             ui.add_space(4.0);
         });
 
+        egui::TopBottomPanel::bottom("lib-bottom").show(ctx, |ui| {
+            ui.add_space(2.0);
+            ui.label(
+                egui::RichText::new(
+                    "Click to select · double-click to develop · 0–5 rate · P pick · X reject · U unflag · 6–9 color",
+                )
+                .small()
+                .weak(),
+            );
+            ui.add_space(2.0);
+        });
+
         egui::CentralPanel::default().show(ctx, |ui| {
             let photos = self.photos.clone();
             if photos.is_empty() {
@@ -370,35 +450,50 @@ impl Gui {
                 ui.horizontal_wrapped(|ui| {
                     for p in &photos {
                         self.request_thumb(p.id, p.path.clone());
-                        let clicked = ui
-                            .allocate_ui(egui::vec2(184.0, 196.0), |ui| {
+                        let selected = self.selected == Some(p.id);
+                        let resp = ui
+                            .allocate_ui(egui::vec2(184.0, 210.0), |ui| {
                                 ui.vertical_centered(|ui| {
-                                    let clicked = if let Some(h) = self.thumbs.get(&p.id) {
+                                    let resp = if let Some(h) = self.thumbs.get(&p.id) {
                                         let size = fit(h.size_vec2(), egui::vec2(176.0, 150.0));
-                                        ui.add(egui::ImageButton::new(egui::Image::new(
+                                        Some(ui.add(egui::ImageButton::new(egui::Image::new(
                                             egui::load::SizedTexture::new(h.id(), size),
-                                        )))
-                                        .clicked()
+                                        ))))
                                     } else {
                                         ui.allocate_ui(egui::vec2(176.0, 150.0), |ui| {
                                             ui.centered_and_justified(|ui| ui.spinner());
                                         });
-                                        false
+                                        None
                                     };
                                     ui.label(egui::RichText::new(&p.filename).small());
-                                    clicked
+                                    ui.label(egui::RichText::new(badge(p)).small().weak());
+                                    resp
                                 })
                                 .inner
                             })
                             .inner;
-                        if clicked {
-                            self.open_develop(p.id, p.path.clone());
+
+                        if let Some(resp) = resp {
+                            if selected {
+                                ui.painter().rect_stroke(
+                                    resp.rect.expand(3.0),
+                                    3.0,
+                                    egui::Stroke::new(2.0, egui::Color32::from_rgb(90, 160, 250)),
+                                );
+                            }
+                            if resp.double_clicked() {
+                                self.open_develop(p.id, p.path.clone());
+                            } else if resp.clicked() {
+                                self.selected = Some(p.id);
+                            }
                         }
                     }
                 });
                 ui.add_space(8.0);
             });
         });
+
+        self.handle_library_keys(ctx);
     }
 
     fn develop_ui(&mut self, ctx: &egui::Context) {
@@ -604,6 +699,19 @@ fn slider(ui: &mut egui::Ui, v: &mut f32, label: &str) -> bool {
     ui.add(egui::Slider::new(v, -100.0..=100.0).text(label)).changed()
 }
 
+/// A compact one-line badge for a library thumbnail: stars, pick/reject, color.
+fn badge(p: &PhotoRow) -> String {
+    let stars: String = "★".repeat(p.rating.clamp(0, 5) as usize);
+    let flag = match p.flag {
+        1 => " ⚑",
+        -1 => " ⊘",
+        _ => "",
+    };
+    const COLORS: [&str; 6] = ["", " ●R", " ●Y", " ●G", " ●B", " ●P"];
+    let color = COLORS[p.color_label.clamp(0, 5) as usize];
+    format!("{stars}{flag}{color}")
+}
+
 const HSL_BANDS: [&str; 8] =
     ["Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple", "Magenta"];
 
@@ -691,6 +799,7 @@ impl ApplicationHandler for App {
             mode: if single { Mode::Develop } else { Mode::Library },
             single_file: single,
             status: String::new(),
+            selected: None,
             dev_id: -1,
             dev_path: None,
             dev_loading: false,

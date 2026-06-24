@@ -34,6 +34,9 @@ pub struct PhotoRow {
     pub aperture: Option<f64>,
     pub width: i64,
     pub height: i64,
+    pub rating: i64,      // 0..5 stars
+    pub flag: i64,        // -1 reject, 0 none, +1 pick
+    pub color_label: i64, // 0 none, 1..5 = red/yellow/green/blue/purple
 }
 
 #[derive(Debug, Default)]
@@ -140,7 +143,8 @@ impl Catalog {
     pub fn list_photos(&self) -> Result<Vec<PhotoRow>, CatalogError> {
         let mut stmt = self.conn.prepare(
             "SELECT p.id, f.path || '/' || p.filename, p.filename,
-                    p.camera_model, p.iso, p.aperture, p.width, p.height
+                    p.camera_model, p.iso, p.aperture, p.width, p.height,
+                    p.rating, p.flag, p.color_label
              FROM photo p JOIN folder f ON f.id = p.folder_id
              ORDER BY p.id DESC",
         )?;
@@ -155,10 +159,40 @@ impl Catalog {
                     aperture: r.get(5)?,
                     width: r.get(6)?,
                     height: r.get(7)?,
+                    rating: r.get(8)?,
+                    flag: r.get(9)?,
+                    color_label: r.get(10)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
+    }
+
+    /// Set a photo's star rating (clamped to 0..5).
+    pub fn set_rating(&self, photo_id: i64, rating: i64) -> Result<(), CatalogError> {
+        self.conn.execute(
+            "UPDATE photo SET rating=?2 WHERE id=?1",
+            params![photo_id, rating.clamp(0, 5)],
+        )?;
+        Ok(())
+    }
+
+    /// Set a photo's pick/reject flag (-1 reject, 0 none, +1 pick).
+    pub fn set_flag(&self, photo_id: i64, flag: i64) -> Result<(), CatalogError> {
+        self.conn.execute(
+            "UPDATE photo SET flag=?2 WHERE id=?1",
+            params![photo_id, flag.clamp(-1, 1)],
+        )?;
+        Ok(())
+    }
+
+    /// Set a photo's color label (0 none, 1..5 = red/yellow/green/blue/purple).
+    pub fn set_color_label(&self, photo_id: i64, label: i64) -> Result<(), CatalogError> {
+        self.conn.execute(
+            "UPDATE photo SET color_label=?2 WHERE id=?1",
+            params![photo_id, label.clamp(0, 5)],
+        )?;
+        Ok(())
     }
 
     /// First photo id (handy for the spike CLI: "develop newest import").

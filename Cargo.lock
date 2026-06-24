@@ -485,6 +485,7 @@ dependencies = [
  "recipe",
  "rusqlite",
  "serde_json",
+ "tempfile",
  "thiserror 1.0.69",
  "walkdir",
 ]
