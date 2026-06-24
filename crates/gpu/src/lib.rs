@@ -266,6 +266,80 @@ pub fn make_pipeline(
     })
 }
 
+/// A reusable Rgba8Unorm render target that the GUI develop view draws into and
+/// then hands to egui as a native texture. Sized independently of the source
+/// image (the develop shader samples the full-res linear texture), so the
+/// preview can be capped for responsiveness.
+pub struct PreviewTarget {
+    pub texture: wgpu::Texture,
+    /// Linear (Rgba8Unorm) view used as the render attachment. The develop
+    /// shader writes already-sRGB-encoded bytes here (no hardware re-encode).
+    pub attach_view: wgpu::TextureView,
+    /// sRGB reinterpreting view handed to egui. Sampling it converts the stored
+    /// sRGB bytes back to linear so egui's sRGB framebuffer displays them
+    /// correctly (avoids the classic double-gamma washout).
+    pub sample_view: wgpu::TextureView,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl PreviewTarget {
+    pub fn new(ctx: &GpuContext, width: u32, height: u32) -> Self {
+        let texture = ctx.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("preview-target"),
+            size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[wgpu::TextureFormat::Rgba8UnormSrgb],
+        });
+        let attach_view = texture.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(wgpu::TextureFormat::Rgba8Unorm),
+            ..Default::default()
+        });
+        let sample_view = texture.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(wgpu::TextureFormat::Rgba8UnormSrgb),
+            ..Default::default()
+        });
+        Self { texture, attach_view, sample_view, width, height }
+    }
+}
+
+/// Render `scene` with `params` into a preview target using a prebuilt pipeline
+/// (Rgba8Unorm). Used by the interactive develop view; cheap to call per edit.
+pub fn render_to_target(
+    ctx: &GpuContext,
+    pipeline: &wgpu::RenderPipeline,
+    scene: &Scene,
+    params: DevelopParams,
+    target: &PreviewTarget,
+) {
+    scene.set_params(&ctx.queue, params);
+    let mut enc = ctx.device.create_command_encoder(&Default::default());
+    {
+        let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("preview-pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &target.attach_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+        pass.set_pipeline(pipeline);
+        pass.set_bind_group(0, &scene.bind_group, &[]);
+        pass.draw(0..3, 0..1);
+    }
+    ctx.queue.submit([enc.finish()]);
+}
+
 /// Headless render of `scene` with `params` to an 8-bit sRGB PNG.
 pub fn export_png(
     ctx: &GpuContext,

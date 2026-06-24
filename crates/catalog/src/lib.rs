@@ -23,6 +23,19 @@ pub struct Catalog {
     conn: Connection,
 }
 
+/// One catalog photo, denormalized for the library grid.
+#[derive(Debug, Clone)]
+pub struct PhotoRow {
+    pub id: i64,
+    pub path: PathBuf,
+    pub filename: String,
+    pub camera: Option<String>,
+    pub iso: Option<i64>,
+    pub aperture: Option<f64>,
+    pub width: i64,
+    pub height: i64,
+}
+
 #[derive(Debug, Default)]
 pub struct ImportStats {
     pub scanned: usize,
@@ -120,6 +133,32 @@ impl Catalog {
         )?;
         tx.commit()?;
         Ok(())
+    }
+
+    /// All photos in the catalog, newest import first, with enough metadata to
+    /// render a library grid and reopen the file for develop.
+    pub fn list_photos(&self) -> Result<Vec<PhotoRow>, CatalogError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT p.id, f.path || '/' || p.filename, p.filename,
+                    p.camera_model, p.iso, p.aperture, p.width, p.height
+             FROM photo p JOIN folder f ON f.id = p.folder_id
+             ORDER BY p.id DESC",
+        )?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(PhotoRow {
+                    id: r.get(0)?,
+                    path: PathBuf::from(r.get::<_, String>(1)?),
+                    filename: r.get(2)?,
+                    camera: r.get(3)?,
+                    iso: r.get(4)?,
+                    aperture: r.get(5)?,
+                    width: r.get(6)?,
+                    height: r.get(7)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
     }
 
     /// First photo id (handy for the spike CLI: "develop newest import").

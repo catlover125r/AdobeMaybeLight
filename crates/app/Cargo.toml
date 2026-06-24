@@ -17,3 +17,7 @@ wgpu = "22"
 winit = "0.30"
 pollster = "0.3"
 rfd = "0.14"
+egui = "0.29"
+egui-wgpu = "0.29"
+egui-winit = "0.29"
+image = { version = "0.25", default-features = false }
