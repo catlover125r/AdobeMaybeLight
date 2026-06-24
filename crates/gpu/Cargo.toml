@@ -9,6 +9,6 @@ wgpu = "22"
 bytemuck = { version = "1", features = ["derive"] }
 half = { version = "2", features = ["bytemuck"] }
 pollster = "0.3"
-image = { version = "0.25", default-features = false, features = ["png", "tiff"] }
+image = { version = "0.25", default-features = false, features = ["png", "tiff", "jpeg"] }
 raw-decode = { path = "../raw-decode" }
 recipe = { path = "../recipe" }

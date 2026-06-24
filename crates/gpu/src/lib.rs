@@ -363,13 +363,13 @@ pub fn render_to_target(
     ctx.queue.submit([enc.finish()]);
 }
 
-/// Headless render of `scene` with `params` to an 8-bit sRGB PNG.
-pub fn export_png(
+/// Headless render of `scene` with `params` to a tightly-packed 8-bit sRGB
+/// RGBA buffer. Shared by every file-export format.
+pub fn render_rgba8(
     ctx: &GpuContext,
     scene: &Scene,
     params: DevelopParams,
-    path: &std::path::Path,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(u32, u32, Vec<u8>), Box<dyn std::error::Error>> {
     scene.set_params(&ctx.queue, params);
     let (w, h) = (scene.width, scene.height);
 
@@ -450,7 +450,52 @@ pub fn export_png(
     }
     drop(mapped);
     readback.unmap();
+    Ok((w, h, pixels))
+}
 
+/// Export `scene`+`params` to a file, choosing the encoder by extension:
+/// `.jpg`/`.jpeg` (8-bit, quality `jpeg_quality`), `.tif`/`.tiff`, else PNG.
+pub fn export_image(
+    ctx: &GpuContext,
+    scene: &Scene,
+    params: DevelopParams,
+    path: &std::path::Path,
+    jpeg_quality: u8,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (w, h, pixels) = render_rgba8(ctx, scene, params)?;
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    match ext.as_str() {
+        "jpg" | "jpeg" => {
+            // JPEG has no alpha; drop it.
+            let mut rgb = Vec::with_capacity((w * h * 3) as usize);
+            for px in pixels.chunks_exact(4) {
+                rgb.extend_from_slice(&px[..3]);
+            }
+            let file = std::fs::File::create(path)?;
+            let mut enc = image::codecs::jpeg::JpegEncoder::new_with_quality(
+                std::io::BufWriter::new(file),
+                jpeg_quality.clamp(1, 100),
+            );
+            enc.encode(&rgb, w, h, image::ExtendedColorType::Rgb8)?;
+        }
+        "tif" | "tiff" => image::save_buffer(path, &pixels, w, h, image::ColorType::Rgba8)?,
+        _ => image::save_buffer(path, &pixels, w, h, image::ColorType::Rgba8)?,
+    }
+    Ok(())
+}
+
+/// Headless render of `scene` with `params` to an 8-bit sRGB PNG.
+pub fn export_png(
+    ctx: &GpuContext,
+    scene: &Scene,
+    params: DevelopParams,
+    path: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (w, h, pixels) = render_rgba8(ctx, scene, params)?;
     image::save_buffer(path, &pixels, w, h, image::ColorType::Rgba8)?;
     Ok(())
 }

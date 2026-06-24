@@ -75,5 +75,15 @@ fn main() {
     assert!(distinct.len() > 3, "grain must vary across a flat row (got {} levels)", distinct.len());
     println!("grain OK: {} distinct levels across a flat row", distinct.len());
 
+    // --- Export formats: JPEG + TIFF round-trip to the right dimensions. ---
+    let scene = Scene::from_linear_rgb16(&ctx, w, h, &gray);
+    for (name, q) in [("aml-export.jpg", 90u8), ("aml-export.tif", 0u8)] {
+        let path = std::env::temp_dir().join(name);
+        gpu::export_image(&ctx, &scene, DevelopParams::default(), &path, q).expect("export");
+        let img = image::open(&path).expect("reload export");
+        assert_eq!((img.width(), img.height()), (w, h), "{name} wrong dims");
+        println!("export OK: {name} {}x{}", img.width(), img.height());
+    }
+
     println!("\nall develop-module checks passed");
 }

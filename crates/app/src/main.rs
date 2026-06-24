@@ -103,7 +103,7 @@ fn main() {
         };
         let ctx = pollster::block_on(GpuContext::new(None));
         let scene = Scene::from_raw(&ctx, &raw);
-        gpu::export_png(&ctx, &scene, DevelopParams::from(&recipe), std::path::Path::new(out))
+        gpu::export_image(&ctx, &scene, DevelopParams::from(&recipe), std::path::Path::new(out), 92)
             .expect("export failed");
         println!("wrote {out}");
         return;

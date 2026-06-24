@@ -322,14 +322,16 @@ impl Gui {
             .dev_path
             .as_ref()
             .and_then(|p| p.file_stem())
-            .map(|s| format!("{}.png", s.to_string_lossy()))
-            .unwrap_or_else(|| "export.png".into());
+            .map(|s| format!("{}.jpg", s.to_string_lossy()))
+            .unwrap_or_else(|| "export.jpg".into());
         if let Some(path) = rfd::FileDialog::new()
             .set_file_name(suggested)
+            .add_filter("JPEG", &["jpg", "jpeg"])
             .add_filter("PNG", &["png"])
+            .add_filter("TIFF", &["tif", "tiff"])
             .save_file()
         {
-            self.status = match gpu::export_png(&self.ctx, scene, self.params(), &path) {
+            self.status = match gpu::export_image(&self.ctx, scene, self.params(), &path, 92) {
                 Ok(()) => format!("Exported {}", path.display()),
                 Err(e) => format!("Export failed: {e}"),
             };
