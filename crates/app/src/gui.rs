@@ -558,6 +558,14 @@ impl Gui {
                     changed |= slider(ui, &mut g.presence.saturation, "Saturation");
 
                     ui.add_space(8.0);
+                    egui::CollapsingHeader::new("Tone Curve").show(ui, |ui| {
+                        changed |= slider(ui, &mut g.tone_curve.highlights, "Highlights");
+                        changed |= slider(ui, &mut g.tone_curve.lights, "Lights");
+                        changed |= slider(ui, &mut g.tone_curve.darks, "Darks");
+                        changed |= slider(ui, &mut g.tone_curve.shadows, "Shadows");
+                    });
+
+                    ui.add_space(8.0);
                     egui::CollapsingHeader::new("Color Mixer (HSL)").show(ui, |ui| {
                         ui.label(egui::RichText::new("Hue").weak());
                         changed |= band_sliders(ui, &mut g.hsl.hue);

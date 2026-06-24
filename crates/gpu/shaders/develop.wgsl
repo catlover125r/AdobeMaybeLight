@@ -30,6 +30,7 @@ struct Develop {
     hsl_lum: array<vec4<f32>, 2>,
     vignette: vec4<f32>, // amount[-100,100], midpoint[0,100], feather[0,100], _
     grain: vec4<f32>,    // amount[0,100], size[0,100], _, _
+    curve: vec4<f32>,    // parametric tone curve regions: shadows,darks,lights,highlights [-100,100]
 };
 
 const LUMA: vec3<f32> = vec3<f32>(0.2126, 0.7152, 0.0722);
@@ -141,6 +142,17 @@ fn apply_hsl(rgb_in: vec3<f32>) -> vec3<f32> {
     return hsv2rgb(vec3<f32>(h, s, v));
 }
 
+// Parametric tone curve: four region sliders (shadows, darks, lights,
+// highlights) drive smooth Gaussian bumps centered across the tonal range.
+// Values outside [0,1] (HDR) get ~zero weight and pass through.
+fn tone_curve(x: f32) -> f32 {
+    let centers = vec4<f32>(0.125, 0.375, 0.625, 0.875);
+    let d = (vec4<f32>(x) - centers) / 0.18;
+    let bump = exp(-0.5 * d * d);
+    let amt = (dev.curve / 100.0) * 0.25;
+    return max(x + dot(amt, bump), 0.0);
+}
+
 fn hash21(p: vec2<f32>) -> f32 {
     var p3 = fract(vec3<f32>(p.x, p.y, p.x) * 0.1031);
     p3 = p3 + dot(p3, vec3<f32>(p3.y, p3.z, p3.x) + 33.33);
@@ -169,6 +181,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // 3. Contrast around an 18% pivot.
     let k = 1.0 + dev.contrast / 100.0;
     rgb = max((rgb - 0.18) * k + 0.18, vec3<f32>(0.0));
+
+    // 3b. Parametric tone curve (guarded: identity when all regions are zero).
+    if (dot(abs(dev.curve), vec4<f32>(1.0)) > 0.0) {
+        rgb = vec3<f32>(tone_curve(rgb.r), tone_curve(rgb.g), tone_curve(rgb.b));
+    }
 
     // 4. Saturation then vibrance (vibrance scales less-saturated pixels more).
     luma = dot(rgb, LUMA);

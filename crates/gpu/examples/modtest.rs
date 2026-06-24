@@ -75,6 +75,27 @@ fn main() {
     assert!(distinct.len() > 3, "grain must vary across a flat row (got {} levels)", distinct.len());
     println!("grain OK: {} distinct levels across a flat row", distinct.len());
 
+    // --- Tone curve: shadows +100 lifts a dark patch, highlights -100 lowers
+    //     a bright patch; the opposite region stays put. ---
+    let dark = flat(w, h, 3000, 3000, 3000); // ~0.046 linear
+    let bright = flat(w, h, 52000, 52000, 52000); // ~0.79 linear
+    let dark_base = luma(px(&render(&ctx, w, h, &dark, DevelopParams::default()), w, 0, 0));
+    let bright_base = luma(px(&render(&ctx, w, h, &bright, DevelopParams::default()), w, 0, 0));
+
+    let mut lift = DevelopParams::default();
+    lift.curve = [100.0, 0.0, 0.0, 0.0]; // shadows up
+    let dark_lift = luma(px(&render(&ctx, w, h, &dark, lift), w, 0, 0));
+    let bright_under_lift = luma(px(&render(&ctx, w, h, &bright, lift), w, 0, 0));
+
+    let mut drop = DevelopParams::default();
+    drop.curve = [0.0, 0.0, 0.0, -100.0]; // highlights down
+    let bright_drop = luma(px(&render(&ctx, w, h, &bright, drop), w, 0, 0));
+
+    assert!(dark_lift > dark_base + 10, "curve shadows+ must lift darks ({dark_base}->{dark_lift})");
+    assert!((bright_under_lift as i32 - bright_base as i32).abs() < 8, "shadows+ must barely touch highlights");
+    assert!(bright_drop + 10 < bright_base, "curve highlights- must lower brights ({bright_base}->{bright_drop})");
+    println!("tone curve OK: dark {dark_base}->{dark_lift}, bright {bright_base}->{bright_drop}");
+
     // --- Export formats: JPEG + TIFF round-trip to the right dimensions. ---
     let scene = Scene::from_linear_rgb16(&ctx, w, h, &gray);
     for (name, q) in [("aml-export.jpg", 90u8), ("aml-export.tif", 0u8)] {

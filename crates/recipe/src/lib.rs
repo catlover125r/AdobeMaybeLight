@@ -37,6 +37,17 @@ pub struct Globals {
     pub presence: Presence,
     pub hsl: Hsl,
     pub effects: Effects,
+    pub tone_curve: ToneCurve,
+}
+
+/// Parametric tone curve (the four region sliders). All [-100,100], 0 = identity.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ToneCurve {
+    pub shadows: f32,
+    pub darks: f32,
+    pub lights: f32,
+    pub highlights: f32,
 }
 
 /// Per-band HSL/color mixer. 8 bands, in order:

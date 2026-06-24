@@ -29,6 +29,7 @@ pub struct DevelopParams {
     pub hsl_lum: [[f32; 4]; 2],
     pub vignette: [f32; 4], // amount, midpoint, feather, _
     pub grain: [f32; 4],    // amount, size, _, _
+    pub curve: [f32; 4],    // parametric tone curve: shadows, darks, lights, highlights
 }
 
 impl Default for DevelopParams {
@@ -51,6 +52,7 @@ impl Default for DevelopParams {
             hsl_lum: [[0.0; 4]; 2],
             vignette: [0.0; 4],
             grain: [0.0; 4],
+            curve: [0.0; 4],
         }
     }
 }
@@ -91,6 +93,10 @@ impl From<&recipe::Recipe> for DevelopParams {
             hsl_lum: pack8(&g.hsl.luminance),
             vignette: [e.vignette_amount, e.vignette_midpoint, e.vignette_feather, 0.0],
             grain: [e.grain_amount, e.grain_size, 0.0, 0.0],
+            curve: {
+                let c = &g.tone_curve;
+                [c.shadows, c.darks, c.lights, c.highlights]
+            },
         }
     }
 }
