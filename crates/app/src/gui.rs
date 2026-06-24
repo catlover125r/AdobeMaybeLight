@@ -171,6 +171,9 @@ struct Gui {
     dev_tex_id: Option<egui::TextureId>,
     recipe: Recipe,
     preview_dirty: bool,
+    clipboard: Option<Recipe>,
+    presets: Vec<(i64, String)>,
+    preset_name: String,
 }
 
 impl Gui {
@@ -380,6 +383,37 @@ impl Gui {
         }
         if let Some(l) = label {
             self.set_label(id, l);
+        }
+    }
+
+    fn refresh_presets(&mut self) {
+        if let Some(cat) = &self.catalog {
+            self.presets = cat.list_presets().unwrap_or_default();
+        }
+    }
+
+    fn save_preset(&mut self) {
+        let name = self.preset_name.trim().to_string();
+        if name.is_empty() {
+            self.status = "Name the preset first.".into();
+            return;
+        }
+        if let Some(cat) = &self.catalog {
+            match cat.save_preset(&name, &self.recipe) {
+                Ok(()) => self.status = format!("Saved preset “{name}”"),
+                Err(e) => self.status = format!("Preset save failed: {e}"),
+            }
+        }
+        self.refresh_presets();
+    }
+
+    fn apply_preset(&mut self, id: i64) {
+        if let Some(cat) = &self.catalog {
+            if let Ok(r) = cat.preset_recipe(id) {
+                self.recipe = r;
+                self.preview_dirty = true;
+                self.status = "Preset applied.".into();
+            }
         }
     }
 
@@ -637,6 +671,25 @@ impl Gui {
                             .changed();
                     });
 
+                    ui.add_space(8.0);
+                    egui::CollapsingHeader::new("Presets").show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.text_edit_singleline(&mut self.preset_name);
+                            if ui.button("Save preset").clicked() {
+                                self.save_preset();
+                            }
+                        });
+                        let presets = self.presets.clone();
+                        for (id, name) in &presets {
+                            if ui.button(name).clicked() {
+                                self.apply_preset(*id);
+                            }
+                        }
+                        if presets.is_empty() && self.catalog.is_some() {
+                            ui.label(egui::RichText::new("No presets yet.").small().weak());
+                        }
+                    });
+
                     ui.add_space(12.0);
                     ui.separator();
                     ui.horizontal(|ui| {
@@ -644,6 +697,18 @@ impl Gui {
                             self.recipe = Recipe::default();
                             changed = true;
                         }
+                        if ui.button("Copy").clicked() {
+                            self.clipboard = Some(self.recipe.clone());
+                            self.status = "Settings copied.".into();
+                        }
+                        if ui.add_enabled(self.clipboard.is_some(), egui::Button::new("Paste")).clicked() {
+                            if let Some(r) = &self.clipboard {
+                                self.recipe = r.clone();
+                                changed = true;
+                            }
+                        }
+                    });
+                    ui.horizontal(|ui| {
                         if ui.button("💾  Save").clicked() {
                             self.save_recipe();
                         }
@@ -854,7 +919,11 @@ impl ApplicationHandler for App {
             dev_tex_id: None,
             recipe: Recipe::default(),
             preview_dirty: false,
+            clipboard: None,
+            presets: Vec::new(),
+            preset_name: String::new(),
         };
+        gui.refresh_presets();
 
         if let Some((path, rec)) = data.single {
             gui.open_develop(-1, path);

@@ -195,6 +195,32 @@ impl Catalog {
         Ok(())
     }
 
+    /// Save (or replace by name) a develop preset.
+    pub fn save_preset(&self, name: &str, recipe: &recipe::Recipe) -> Result<(), CatalogError> {
+        self.conn.execute("DELETE FROM preset WHERE name=?1", params![name])?;
+        self.conn.execute(
+            "INSERT INTO preset (name, recipe) VALUES (?1, ?2)",
+            params![name, recipe.to_json()],
+        )?;
+        Ok(())
+    }
+
+    /// All presets as (id, name), alphabetical.
+    pub fn list_presets(&self) -> Result<Vec<(i64, String)>, CatalogError> {
+        let mut stmt = self.conn.prepare("SELECT id, name FROM preset ORDER BY name")?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// The recipe stored in a preset.
+    pub fn preset_recipe(&self, preset_id: i64) -> Result<recipe::Recipe, CatalogError> {
+        let json: String =
+            self.conn.query_row("SELECT recipe FROM preset WHERE id=?1", params![preset_id], |r| r.get(0))?;
+        Ok(recipe::Recipe::from_json(&json)?)
+    }
+
     /// First photo id (handy for the spike CLI: "develop newest import").
     pub fn first_photo(&self) -> Result<Option<(i64, PathBuf)>, CatalogError> {
         Ok(self
