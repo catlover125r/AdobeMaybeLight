@@ -40,16 +40,27 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
+      - name: Install macOS deps
+        if: runner.os == 'macOS'
+        run: brew install libraw
+
       - name: Install Linux deps
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -q
           sudo apt-get install -y --no-install-recommends \
-            pkg-config libgtk-3-dev libxkbcommon-dev \
+            pkg-config libraw-dev \
+            libgtk-3-dev libxkbcommon-dev \
             libwayland-dev libegl-dev libgles-dev \
             libx11-dev libxrandr-dev libxi-dev libxcursor-dev
 
+      - name: Install Windows deps
+        if: runner.os == 'Windows'
+        run: vcpkg install libraw:x64-windows
+
       - name: Build
+        env:
+          LIBRAW_DIR: ${{ runner.os == 'Windows' && 'C:\vcpkg\installed\x64-windows' || '' }}
         run: cargo build --release --target ${{ matrix.target }} -p app
 
       - name: Package (macOS / Linux)
