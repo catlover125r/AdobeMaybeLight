@@ -17,7 +17,14 @@ fn main() {
         .compile("aml_raw_shim");
 
     println!("cargo:rustc-link-search=native={}", lib.display());
-    println!("cargo:rustc-link-lib=dylib=raw");
+    // vcpkg keeps only the thread-safe raw_r import lib in lib/ (raw.lib is
+    // moved to lib/manual-link), so link raw_r on Windows.
+    let libname = if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        "raw_r"
+    } else {
+        "raw"
+    };
+    println!("cargo:rustc-link-lib=dylib={libname}");
     println!("cargo:rerun-if-changed=csrc/shim.c");
     println!("cargo:rerun-if-env-changed=LIBRAW_DIR");
 }
